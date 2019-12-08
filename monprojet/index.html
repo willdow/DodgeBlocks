@@ -1,0 +1,347 @@
+<!doctype html>
+<html>
+
+<head>
+	<style>
+		#game_canvas {
+			position: fixed;
+			width: 100vw;
+			height: 100vh;
+			top: 0vh;
+			left: 0vw;
+			background-color: #800f;
+		}
+
+		#fps_counter {
+			position: fixed;
+			width: 10vw;
+			height: 10vh;
+			top: 0vh;
+			left: 90vw;
+			background-color: #083f;
+			color: white;
+			font-size: 50px;
+			text-align: center;
+		}
+
+		#score_counter {
+			position: fixed;
+			width: 10vw;
+			height: 10vh;
+			top: 0vh;
+			left: 45vw;
+			background-color: rgb(197, 123, 212);
+			color: white;
+			font-size: 50px;
+			text-align: center;
+		}
+
+	</style>
+	<title>Escape Block</title>
+</head>
+
+<body>
+	<canvas id="game_canvas"></canvas>
+	<div id="fps_counter">100</div>
+	<div id="score_counter">0</div>
+</body>
+
+<script src="..//build/three.js"></script>
+<script src="../examples/js/utils/SceneUtils.js"></script>
+
+<script src="js/SpaceControls.js"></script>
+<script src="js/bullet.js"></script>
+<script src="js/ImprovedNoise.js"></script>
+<script src="js/raycaster.js"></script>
+
+<script type="text/javascript">
+	////////VARIABLES GLOBALES OBLIGATOIRES////////
+	var scene = null;
+	var camera = null;
+	var renderer = null;
+	var pointerlockchange;
+	var pointerlockerror;
+
+	//CHARACTER > LE PERSONNAGE (MESH/OBJECT3D/CAMERA) AUXQUELS S'APPLIQUENT LES CONTROLES
+	var character = null;
+
+	//LES CONTROLS
+	var controls = null;
+	var controls_vectors = null;
+
+	//TEMPS POUR LES FPS ET LES CONTROLS
+	var fps = 0;
+	var last_time = 0;
+	var delta_time = 0;
+
+	//Nos variables
+	var terrain = null;
+	var bullets = [];
+	var obstacles = [];
+	var score = 0;
+	var recompenses = [];
+	var snows = [];
+
+	init();
+
+	function init() {
+		createScene();
+		animation();
+	}
+
+	function createScene() {
+
+		scene = new THREE.Scene();
+		scene.fog = new THREE.FogExp2(0x000000, 0.0008);
+		camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000000);
+		camera.position.z = 6.5;
+		camera.position.y = 2.5;
+		scene.add(camera);
+		//ON RECULE UN PEU LA CAMERA (INITIALEMENT, ELLE EST EN (0,0,0) (COMME TOUS LES OBJECTS D'AILLEURS) )
+		camera.position.set(0, 300, -1000);
+		//CAMERA.LOOKAT(VECTEUR) FAIT QUE LA CAMERA VISE UN POINT DANS L'ESPACE (ICI, (0,0,0) )
+		camera.lookAt(new THREE.Vector3(0, 0, 0));
+
+		renderer = new THREE.WebGLRenderer({
+			canvas: document.getElementById("game_canvas"),
+			sortObjects: true,
+			antialias: true,
+			localClippingEnabled: false,
+			powerPreference: "high-performance",
+			logarithmicDepthBuffer: true,
+			precision: "highp",
+			alpha: true
+		});
+		renderer.setPixelRatio(1.0);
+		renderer.setSize(window.innerWidth * 1.0, window.innerHeight * 1.0);
+		renderer.setClearColor("rgb(95, 87, 97)", 1);
+
+		//POUR BLOQUER LA SOURIS QUAND ON CLIQUE SUR L'ECRAN
+		pointerlockConfiguration();
+
+		//ON AJOUTE DES CONTROLS SUR LE CHARACTER, QUI ICI EST EN FAIT LA CAMERA
+		controls_vectors = [];
+		controls_vectors.push(new THREE.Vector3(0, 0, -1));
+		character = camera;
+		controls = new SpaceControls(character, controls_vectors);
+
+		// var geometry = new THREE.BoxBufferGeometry(2000, 2000, 2000);
+		// var material = new THREE.MeshBasicMaterial({
+		// 	map: texture
+		// });
+		// mesh = new THREE.Mesh(geometry, material);
+		// scene.add(mesh);
+
+		createBlock();
+		createRecompense();
+		addLight();
+		addSnow();
+	}
+
+	function animation() {
+
+		delta_time = Date.now() - last_time;
+		last_time = Date.now();
+		fps = parseInt(1000 / delta_time);
+
+		//camera.translateZ(0.001 * delta_time);
+
+		//JE METS A JOUR LES CONTROLS DE LA CAMERA
+		//update_character_controls(delta_time);
+		//interdire_passer_sous_sol(camera);
+
+		//POUR EMPECHER LA CAMERA DE SORTIR DE LA BORDURE
+		//C'EST UNE SPHERE DE RAYON 2000 CENTREE EN (0,0,0)
+		//ON POURRAIT SE SERVIR DE camera.position.distanceTo(new THREE.Vector3(0,0,0) > 2000){...}
+		/*
+		var distance_camera_to_0_0_0 = camera.position.length();
+		if (camera.position.length() > (2000 - 10)) {
+			camera.position.setLength(2000 - 10);
+    }
+    */
+
+		//BULLETS CONTIENT UN TABLEAU DE BULLET (DES BALLES TIREES PAR LA CAMERA)
+		for (var i = 0; i < bullets.length; i++) {
+			var bullet = bullets[i];
+			bullet.update(delta_time);
+		}
+
+		//déplacement
+		if (moveForward) {
+			camera.position.y += 4;
+		}
+		if (moveBackward) {
+			camera.position.y -= 4;
+		}
+		if (moveLeft) {
+			camera.position.x += 4;
+		}
+		if (moveRight) {
+			camera.position.x -= 4;
+		}
+		if (jump) {
+			camera.position.z += 40;
+		}
+		if (moveBack) {
+			camera.position.z -= 20;
+		}
+
+		//avancer en ligne droite
+		camera.position.z += 4;
+
+		for (let i = 0; i < obstacles.length; i++) {
+			var obstacle = obstacles[i];
+
+			if (camera.position.distanceTo(obstacle.position) < obstacle.heuristique) {
+				obstacle.material.color = new THREE.Color(Math.random(), Math.random(), Math.random());
+				//obstacle.material.wireframe = true;
+				score -= 5;
+				if (score < 0) {
+					score = 0;
+				}
+				console.log("PERDU");
+			}
+			if (obstacle.position.z < camera.position.z - 10) {
+				obstacle.position.x = camera.position.x + (1 - 2 * Math.random()) * 2000;
+				obstacle.position.y = camera.position.y + (1 - 2 * Math.random()) * 2000;
+				obstacle.position.z = camera.position.z + 2000 + Math.random() * 4000;
+				//obstacle.material.wireframe = false;
+			}
+		}
+
+		for (let i = 0; i < recompenses.length; i++) {
+			var recompense = recompenses[i];
+
+			if (recompense.position.z < camera.position.z - 10 || camera.position.distanceTo(recompense.position) < recompense
+				.largeur) {
+				recompense.material.color = new THREE.Color(Math.random(), Math.random(), Math.random());
+				//obstacle.material.wireframe = true;
+
+				recompense.position.x = camera.position.x + (1 - 2 * Math.random()) * 2000;
+				recompense.position.y = camera.position.y + (1 - 2 * Math.random()) * 2000;
+				recompense.position.z = camera.position.z + 2000 + Math.random() * 4000;
+				//obstacle.material.wireframe = false;
+				console.log("BIEN OUEJ");
+				score += 1;
+			}
+		}
+		for (let i = 0; i < snows.length; i++) {
+			var snow = snows[i];
+
+			if (snow.position.z < camera.position.z - 10) {
+				snow.material.color = new THREE.Color(0x888888);
+				snow.position.x = camera.position.x + (1 - 2 * Math.random()) * 2000;
+				snow.position.y = camera.position.y + (1 - 2 * Math.random()) * 2000;
+				snow.position.z = camera.position.z + 2000 + Math.random() * 4000;
+
+				if (camera.position.distanceTo(snow.position) < snow.largeur) {
+					console.log("BIEN OUEJ");
+					score += 1;
+				}
+			}
+		}
+
+		document.getElementById("fps_counter").innerHTML = fps;
+		document.getElementById("score_counter").innerHTML = score;
+
+		//ON APPELLE LA FONCTION D'AFFICHAGE
+		render();
+
+		//ON DEMANDE AU NAVIGATEUR DE RAFRAICHIR LA FENETRE PUIS DE RELANCER "animation()"
+		requestAnimationFrame(animation);
+		addSnow();
+	}
+
+	function createBlock() {
+		for (var i = 0; i < 100; i++) {
+			var largeur = 500 * (0.2 + 0.8 * Math.random());
+			var hauteur = 500 * (0.2 + 0.8 * Math.random());
+			var profondeur = 300 * (0.2 + 0.8 * Math.random());
+      var heuristique = Math.max(largeur, Math.max(hauteur, profondeur)) / 2;
+      var texture = new THREE.TextureLoader().load('bric.jpg');
+			var geometry_cube = new THREE.BoxGeometry(largeur, hauteur, profondeur, 8, 8, 8);
+			var material_cube = new THREE.MeshLambertMaterial({
+				wireframe: false,
+				color: new THREE.Color(Math.random(), Math.random(), Math.random()),
+        side: THREE.DoubleSide,
+        map: texture
+			});
+			cube = new THREE.Mesh(geometry_cube, material_cube);
+			cube.largeur = largeur;
+			cube.hauteur = hauteur;
+			cube.profondeur = profondeur;
+			cube.heuristique = heuristique;
+			cube.position.set((Math.random() - 0.5) * 2000, (Math.random() - 0.5) * 2000, (Math.random() - 0.5) * 2000);
+			scene.add(cube);
+			obstacles.push(cube);
+		}
+	}
+
+	function createRecompense() {
+		for (var i = 0; i < 50; i++) {
+			var largeur = 50 * (0.2 + 0.8 * Math.random());
+			var geometry_sphere = new THREE.IcosahedronGeometry(largeur, 2);
+			var material_sphere = new THREE.MeshLambertMaterial({
+				wireframe: false,
+				color: new THREE.Color(Math.random(), Math.random(), Math.random()),
+				side: THREE.DoubleSide
+			});
+			sphere = new THREE.Mesh(geometry_sphere, material_sphere);
+			sphere.largeur = largeur;
+			sphere.position.set((Math.random() - 0.5) * 2000, (Math.random() - 0.5) * 2000, (Math.random() - 0.5) * 2000);
+			scene.add(sphere);
+			recompenses.push(sphere);
+		}
+	}
+
+	function addSnow() {
+		var snowsGeometry = new THREE.Geometry();
+
+		for (var i = 0; i < 1000; i++) {
+			var snow = new THREE.Vector3();
+			snow.x = THREE.Math.randFloatSpread(1000);
+			snow.y = THREE.Math.randFloatSpread(1000);
+			snow.z = THREE.Math.randFloatSpread(100);
+			snowsGeometry.vertices.push(snow);
+		}
+		var snowsMaterial = new THREE.PointsMaterial({
+			color: 0x888888
+		});
+		var snowField = new THREE.Points(snowsGeometry, snowsMaterial);
+		snowField.position.set((Math.random() - 0.5) * 2000, (Math.random() - 0.5) * 2000, (Math.random() - 0.5) * 2000);
+		scene.add(snowField);
+		snows.push(snowField);
+	}
+
+	//FONCTION QUI PERMET DE DESSINER LA SCENE DANS LE CANVAS
+	function render() {
+		renderer.render(scene, camera);
+	}
+
+	function clic_gauche() {
+		var nouvelle_bullet = new bullet(camera, 2, 2000, bullets);
+		scene.add(nouvelle_bullet);
+		console.log("click gauche");
+	}
+
+	function clic_droit() {
+		console.log("click droit");
+	}
+
+	function addLight() {
+		var hemisphereLight = new THREE.HemisphereLight(0xfffafa, 0x000000, .9)
+		scene.add(hemisphereLight);
+		sun = new THREE.DirectionalLight(0xcdc1c5, 0.9);
+		sun.position.set(12, 6, -7);
+		sun.castShadow = true;
+		scene.add(sun);
+		//Set up shadow properties for the sun light
+		sun.shadow.mapSize.width = 256;
+		sun.shadow.mapSize.height = 256;
+		sun.shadow.camera.near = 0.5;
+		sun.shadow.camera.far = 50;
+	}
+
+</script>
+
+</html>

@@ -1,0 +1,474 @@
+<!doctype html>
+<html>
+
+<head>
+	<style>
+		#game_canvas {
+			position: fixed;
+			width: 100vw;
+			height: 100vh;
+			top: 0vh;
+			left: 0vw;
+			background-color: #800f;
+		}
+
+		#fps_counter {
+			position: fixed;
+			width: 10vw;
+			height: 10vh;
+			top: 0vh;
+			left: 45vw;
+			background-color: #083f;
+			color: white;
+			font-size: 50px;
+			text-align: center;
+		}
+
+	</style>
+	<title>SUPERJEU</title>
+</head>
+
+<body>
+	<canvas id="game_canvas"></canvas>
+	<div id="fps_counter">1000</div>
+</body>
+
+<script src="..//build/three.js"></script>
+<script src="../examples/js/utils/SceneUtils.js"></script>
+
+<script src="js/SpaceControls.js"></script>
+<script src="js/bullet.js"></script>
+<script src="js/ImprovedNoise.js"></script>
+<script src="js/raycaster.js"></script>
+
+<script type="text/javascript">
+	////////VARIABLES GLOBALES OBLIGATOIRES////////
+
+	//REPRESENTE LE MONDE EN 3D
+	var scene = null;
+
+	//CAMERA
+	var camera = null;
+
+	//LE RENDERER DE THREEJS
+	var renderer = null;
+
+	//UN TRUC QUE J'EXPLIQUE PLUS TARD
+	var pointerlockchange;
+	var pointerlockerror;
+
+	//CHARACTER > LE PERSONNAGE (MESH/OBJECT3D/CAMERA) AUXQUELS S'APPLIQUENT LES CONTROLES
+	var character = null;
+
+	//LES CONTROLS
+	var controls = null;
+	var controls_vectors = null;
+
+	//TEMPS POUR LES FPS ET LES CONTROLS
+	var fps = 0;
+	var last_time = 0;
+	var delta_time = 0;
+
+	//Nos variables
+	var icosa = null;
+	var cube = null;
+	var terrain = null;
+	var bordure = null;
+	var bonhomme = null;
+	var light = [];
+	var carotte = null;
+	var oeil1 = null;
+	var oeil2 = null;
+	var main1 = null;
+	var main2 = null;
+	var bouche = null;
+
+	var lights = [];
+	var bullets = [];
+
+	var noise_xyz = null;
+	var gravityAcive = Boolean;
+
+	function bruitTerrain(x, y) {
+		return ImprovedNoise().noise(x, y, 0) * 200;
+	}
+
+	//ICI ON LANCE LE CODE
+	init();
+	animation();
+
+	//FONCTION QU'ON LANCE EN PREMIER POUR INITIALISER NOS VARIABLES GLOBALES
+	function init() {
+
+		//ON CREE LA SCENE
+		scene = new THREE.Scene();
+
+		//ON CREE UNE CAMERA PERSPECTIVE (JE VOUS LAISSE VOUS RENSEIGNER)
+		camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.01, 100000);
+		//ON AJOUTE LA CAMERA A LA SCENE
+		scene.add(camera);
+		//ON RECULE UN PEU LA CAMERA (INITIALEMENT, ELLE EST EN (0,0,0) (COMME TOUS LES OBJECTS D'AILLEURS) )
+		camera.position.set(0, 300, -1000);
+		//CAMERA.LOOKAT(VECTEUR) FAIT QUE LA CAMERA VISE UN POINT DANS L'ESPACE (ICI, (0,0,0) )
+		camera.lookAt(new THREE.Vector3(0, 0, 0));
+
+		//On crée notre renderer WebGL
+		renderer = new THREE.WebGLRenderer({
+			canvas: document.getElementById("game_canvas"),
+			sortObjects: true,
+			antialias: true,
+			localClippingEnabled: false,
+			powerPreference: "high-performance",
+			logarithmicDepthBuffer: true,
+			precision: "highp"
+		});
+		renderer.setPixelRatio(1.0);
+		renderer.setSize(window.innerWidth * 1.0, window.innerHeight * 1.0);
+		renderer.setClearColor(new THREE.Color(0xff0088ff), 0.0);
+
+		//POUR BLOQUER LA SOURIS QUAND ON CLIQUE SUR L'ECRAN
+		//APPUYER SUR ECHAP POUR SORTIR DU POINTERLOCK
+		pointerlockConfiguration();
+
+		//ON AJOUTE DES CONTROLS SUR LE CHARACTER, QUI ICI EST EN FAIT LA CAMERA
+		//JE VOUS LAISSE TESTER DES TRUCS        
+		controls_vectors = [];
+		controls_vectors.push(new THREE.Vector3(0, 0, -1));
+		character = camera;
+		controls = new SpaceControls(character, controls_vectors);
+
+		noise_xyz = ImprovedNoise();
+		//JE CREE UNE BORDURE POUR MA SCENE
+		//ICI, J'AI MELANGE DEUX MATERIAUX POUR FAIRE LA BORDURE
+		var geometry_bordure = new THREE.IcosahedronGeometry(2000, 4);
+		var material_bordure_1 = new THREE.MeshBasicMaterial({
+			color: "white",
+			wireframe: true
+		});
+		var material_bordure_2 = new THREE.MeshBasicMaterial({
+			color: "black",
+			wireframe: false,
+			side: THREE.DoubleSide
+		});
+		var materials_bordure = [material_bordure_1, material_bordure_2];
+		bordure = THREE.SceneUtils.createMultiMaterialObject(geometry_bordure, materials_bordure);
+		scene.add(bordure);
+
+		//ON AJOUTE DE LA LUMIERE DANS LA SCENE
+		//ON POURRAIT L'AJOUTER SUR UN OBJECT, SUR LA CAMERA, ETC...
+		//ON PEUT LA DEPLACER DANS LA BOUCLE D'ANIMATIOn, CHANGER SA COULEUR, ETC...
+		var light = new THREE.PointLight("white", 1, 100000);
+		light.position.set(0, 4000, 0);
+		//camera.add(light);
+		scene.add(light);
+		lights.push(light);
+
+		var geometry_icosa = new THREE.IcosahedronGeometry(300, 2);
+		var material_icosa = new THREE.MeshLambertMaterial({
+			wireframe: false,
+			color: "red"
+		});
+		icosa = new THREE.Mesh(geometry_icosa, material_icosa);
+		icosa.position.set(-2000, 0, 0);
+		scene.add(icosa);
+
+		var geometry_cube = new THREE.BoxGeometry(300, 300, 300, 8, 8, 8);
+		var material_cube = new THREE.MeshLambertMaterial({
+			wireframe: false,
+			color: "green"
+		});
+		cube = new THREE.Mesh(geometry_cube, material_cube);
+		cube.position.set(-800, 0, 0);
+		scene.add(cube);
+
+
+		//JE CREE UN TERRAIN
+		var geometry_terrain = new THREE.PlaneGeometry(5000, 5000, 128, 128);
+		var material_terrain = new THREE.MeshLambertMaterial({
+			wireframe: false,
+			color: "white",
+			vertexColors: THREE.FaceColors
+		});
+
+		//A APPLIQUER SUR UNE GEOMETRY POUR CALCULER LES "NORMALES" DE CHAQUE FACE
+		geometry_terrain.computeFaceNormals();
+
+		//JE PARCOURS LES FACES DE LA GEOMETRY, JE CALCULE LEUR BARYCENTRE (CENTROID), ET JE DONNE UNE COULEUR A CHAQUE FACE
+		for (var i = 0; i < geometry_terrain.faces.length; i++) {
+			var face = geometry_terrain.faces[i];
+			//LES 3 SOMMETS DE LA FACE SONT DANS LE TABLEAU "VERTICES", AUX INDICES CORRESPONDANT à face.a, face.b, face.x
+			var p_a = geometry_terrain.vertices[face.a];
+			var p_b = geometry_terrain.vertices[face.b];
+			var p_c = geometry_terrain.vertices[face.c];
+			var centroid = p_a.clone().add(p_b).add(p_c);
+			centroid.multiplyScalar(1 / 3);
+			var color = new THREE.Color((1 + centroid.x / 5000) / 2, (1 + centroid.y / 3000) / 2, (1 + centroid.z / 4000) / 2);
+			face.color = color;
+		}
+		terrain = new THREE.Mesh(geometry_terrain, material_terrain);
+
+		// JE FAIS TOURNER LE TERRAIN POUR QU'IL POINTE VERS LE HAUT (AXE DES Y).
+		//terrain.rotation.x -= Math.PI / 2;
+		scene.add(terrain);
+
+		//JE MODIFIE LA GEOMETRIE DU TERRAIN (ON PEUT LE FAIRE AVEC N'IMPORTE QUELLE GEOMETRIE)
+		if (terrain != null) {
+			var geometry_terrain = terrain.geometry;
+			for (var i = 0; i < geometry_terrain.vertices.length; i++) {
+				var v = geometry_terrain.vertices[i];
+				//v.z = Math.sin(0 / 500 + v.x / 100 + v.y / 110) * 100;
+				//v.z = Math.sin(v.length() / 50) * 1000;
+				v.z = 1 + noise_xyz.noise(v.x / 500, v.y / 500, 0) * 200;
+			}
+			geometry_terrain.verticesNeedUpdate = true;
+			geometry_terrain.computeFaceNormals();
+			geometry_terrain.computeVertexNormals();
+		}
+
+		//MON BONHOMME DE NEIGE
+
+		bonhomme = new THREE.Object3D();
+		var geometry_corps = new THREE.IcosahedronGeometry(500, 2);
+		var geometry_tete = new THREE.IcosahedronGeometry(250, 2);
+
+		var material_corps_tete = new THREE.MeshBasicMaterial({
+			wireframe: false,
+			color: 'lightgrey'
+		});
+
+		var corps = new THREE.Mesh(geometry_corps, material_corps_tete);
+		var tete = new THREE.Mesh(geometry_tete, material_corps_tete);
+
+		tete.position.y += 500;
+
+		bonhomme.add(corps);
+		bonhomme.add(tete);
+		cube.position.set(-800, 0, 0);
+
+		scene.add(bonhomme);
+
+		var geometry_carotte = new THREE.ConeGeometry(20, 100, 32);
+		var material_carotte = new THREE.MeshBasicMaterial({
+			wireframe: true,
+			color: 'orange'
+		});
+		carotte = new THREE.Mesh(geometry_carotte, material_carotte);
+		carotte.rotation.x += Math.PI * 3 / 2;
+		carotte.position.y += 650;
+		carotte.position.z -= 250;
+		scene.add(carotte);
+
+		var geometry_oeil1 = new THREE.IcosahedronGeometry(10, 2);
+		var material_oeil1 = new THREE.MeshBasicMaterial({
+			wireframe: true,
+			color: 'black'
+		});
+		oeil1 = new THREE.Mesh(geometry_oeil1, material_oeil1);
+		oeil1.position.x += 60;
+		oeil1.position.y += 700;
+		oeil1.position.z -= 150;
+		scene.add(oeil1);
+
+		var geometry_oeil2 = new THREE.IcosahedronGeometry(10, 2);
+		var material_oeil2 = new THREE.MeshBasicMaterial({
+			wireframe: true,
+			color: 'black'
+		});
+		oeil2 = new THREE.Mesh(geometry_oeil2, material_oeil2);
+		oeil2.position.x -= 60;
+		oeil2.position.y += 700;
+		oeil2.position.z -= 150;
+		scene.add(oeil2);
+
+		var geometry_main1 = new THREE.CylinderGeometry(5, 5, 400, 62);
+		var material_main1 = new THREE.MeshBasicMaterial({
+			wireframe: false,
+			color: 'brown'
+		});
+		main1 = new THREE.Mesh(geometry_main1, material_main1);
+		main1.position.x += 300;
+		main1.position.y += 400;
+		main1.position.z -= 150;
+		main1.rotation.z += 150;
+		scene.add(main1);
+
+		var geometry_main2 = new THREE.CylinderGeometry(5, 5, 400, 62);
+		var material_main2 = new THREE.MeshBasicMaterial({
+			wireframe: false,
+			color: 'brown'
+		});
+		main2 = new THREE.Mesh(geometry_main2, material_main2);
+		main2.position.x -= 300;
+		main2.position.y += 400;
+		main2.position.z -= 150;
+		main2.rotation.z -= 150;
+		scene.add(main2);
+
+		var geometry_bouche = new THREE.CircleGeometry(30, 60, 0, 3);
+		var material_bouche = new THREE.MeshBasicMaterial({
+			wireframe: true,
+			color: 'red'
+		});
+		bouche = new THREE.Mesh(geometry_bouche, material_bouche);
+		bouche.position.y += 580;
+		bouche.position.z -= 250;
+		bouche.rotation.z += 600;
+		scene.add(bouche);
+
+		scene.add(planeteGenerator());
+	}
+
+	//FONCTION QU'ON VA APPELER EN BOUCLE POUR FAIRE FAIRE BOUGER NOS OBJETS, UPDATE LES CONTROLS ET AFFICHER LA SCENE
+	function animation() {
+
+		//LA FONCTION Date.now() NOUS DONNE LE TEMPS EN MILLISECONDES DEPUIS LE 01/01/1970
+		delta_time = Date.now() - last_time;
+		last_time = Date.now();
+		fps = parseInt(1000 / delta_time);
+
+		//JE METS A JOUR LES CONTROLS DE LA CAMERA
+		update_character_controls(delta_time);
+		interdire_passer_sous_sol(camera);
+
+		//POUR EMPECHER LA CAMERA DE SORTIR DE LA BORDURE
+		//C'EST UNE SPHERE DE RAYON 2000 CENTREE EN (0,0,0)
+		//ON POURRAIT SE SERVIR DE camera.position.distanceTo(new THREE.Vector3(0,0,0) > 2000){...}
+		var distance_camera_to_0_0_0 = camera.position.length();
+		if (camera.position.length() > (2000 - 10)) {
+			camera.position.setLength(2000 - 10);
+		}
+
+		//BULLETS CONTIENT UN TABLEAU DE BULLET (DES BALLES TIREES PAR LA CAMERA)
+		//ON UPDATE CHAQUE BULLET DU TABLEAU
+		for (var i = 0; i < bullets.length; i++) {
+			var bullet = bullets[i];
+			bullet.update(delta_time);
+		}
+
+		//JE VAIS TOURNER L'ICOSA
+		if (icosa != null) {
+			icosa.rotation.x += delta_time / 3000;
+			icosa.rotation.y += delta_time / 2000;
+			icosa.rotation.z += delta_time / 1000;
+		}
+
+		//JE FAIS TOURNER LE CUBE D'UNE AUTRE MANIERE QUE L'ICOSA
+		//SA ROTATION EST DONNEE DIRECTEMENT PAR L'HORLOGE
+		if (cube != null) {
+			cube.rotation.y = last_time / 1000;
+			cube.position.y = (1 + Math.sin(last_time / 1000)) * 300;
+		}
+
+		if (main1 != null) {
+			main1.rotation.x = ((1 + (Math.sin(Date.now() / 1000))) * 0.2);
+		}
+
+		//JE METS LES FPS DANS LA DIV "fps_counter"
+		document.getElementById("fps_counter").innerHTML = fps;
+
+		//ON APPELLE LA FONCTION D'AFFICHAGE
+		render();
+
+		//ON DEMANDE AU NAVIGATEUR DE RAFRAICHIR LA FENETRE PUIS DE RELANCER "animation()"
+		requestAnimationFrame(animation);
+
+		gravityAcive = true;
+		// empecherTomberTerrain();
+		// applyGravity();
+	}
+
+	//FONCTION QUI PERMET DE DESSINER LA SCENE DANS LE CANVAS
+	function render() {
+		renderer.render(scene, camera);
+	}
+
+	//FONCTION APPELEE QUAND ON FAIT UN CLIC GAUCHE
+	function clic_gauche() {
+		var nouvelle_bullet = new bullet(camera, 2, 2000, bullets);
+		scene.add(nouvelle_bullet);
+    console.log("click gauche");
+    trouver_object_en_face_camera(object);
+	}
+
+
+	//FONCTION APPELEE QUAND ON FAIT UN CLIC DROIT
+	function clic_droit() {
+		console.log("click droit");
+	}
+
+	function interdire_passer_sous_sol(object) {
+		var z_autorise = bruitTerrain(object.position.x, object.position.y);
+		if (object.position.z < z_autorise) {
+			object.position.z = z_autorise;
+		}
+	}
+
+	function planeteGenerator() {
+		var geometry = new THREE.IcosahedronGeometry(200, 6);
+		// var material = new THREE.MeshBasicMaterial({
+		// 	wireframe: true,
+		// 	color: 'yellow'
+		// });
+		var mat1 = new THREE.MeshBasicMaterial({
+			wireframe: false,
+			color: 'cyan'
+		});
+		var mat2 = new THREE.MeshBasicMaterial({
+			wireframe: false,
+			color: 'pink'
+		});
+		var mat3 = new THREE.MeshBasicMaterial({
+			wireframe: false,
+			color: 'green'
+		});
+
+		for (let i = 0; i < geometry.vertices.length; i++) {
+			var v = geometry.vertices[i];
+			var noise = 1 + ImprovedNoise().noise(v.x / 50, v.y / 50, v.z / 50) / 4; // le noise au choix
+			v.multiplyScalar(noise);
+
+		}
+
+		for (let i = 0; i < geometry.faces.length; i++) {
+			var face = geometry.faces[i];
+			//LES 3 SOMMETS DE LA FACE SONT DANS LE TABLEAU "VERTICES", AUX INDICES CORRESPONDANT à face.a, face.b, face.x
+			var p_a = geometry.vertices[face.a];
+			var p_b = geometry.vertices[face.b];
+			var p_c = geometry.vertices[face.c];
+			var centroid = p_a.clone().add(p_b).add(p_c);
+			centroid.multiplyScalar(1 / 3);
+
+			if (centroid.z > 0) {
+				face.materialIndex = 0;
+			} else {
+				face.materialIndex = 1;
+			}
+		}
+		var materials = [mat1, mat2, mat3];
+		var mesh = new THREE.Mesh(geometry, materials);
+		mesh.position.x = 900;
+		mesh.position.y = 900;
+		return mesh;
+	}
+
+	function applyGravity() {
+		if (gravityAcive) {
+			character.velocity.y -= 1.3;
+		} else {
+			character.velocity.y = 0;
+			character.position.y += 0.3
+		}
+	}
+
+	function empecherTomberTerrain() {
+		///
+		if (enDessousTerrain) {
+			gravityAcive = false;
+		} else {
+			//
+		}
+	}
+
+</script>
+
+</html>

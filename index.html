@@ -1,0 +1,288 @@
+<!doctype html>
+<html>
+
+<head>
+	<style>
+		#game_canvas {
+			position: fixed;
+			width: 100vw;
+			height: 100vh;
+			top: 0vh;
+			left: 0vw;
+			background-color: #800f;
+		}
+
+		#fps_counter {
+			position: fixed;
+			width: 10vw;
+			height: 10vh;
+			top: 0vh;
+			left: 45vw;
+			background-color: #083f;
+			color: white;
+			font-size: 50px;
+			text-align: center;
+		}
+
+	</style>
+	<title>SUPERJEU</title>
+</head>
+
+<body>
+	<canvas id="game_canvas"></canvas>
+	<div id="fps_counter">1000</div>
+</body>
+<script src="build/three.js"></script>
+<script src="js/spaceControls.js"></script>
+<script type="text/javascript">
+	////////VARIABLES GLOBALES OBLIGATOIRES////////
+	//Pointeur
+	var pointerlockchange;
+	var pointerlockerror;
+
+	//
+	var character = null;
+
+	//controls
+	var controls = null;
+	var controls_vectors = null;
+
+	//REPRESENTE LE MONDE EN 3D
+	var scene = null;
+	//CAMERA
+	var camera = null;
+	//LE RENDERER DE THREEJS
+	var renderer = null;
+
+	//TEMPS POUR LES FPS ET LES CONTROLS
+	var fps = 0;
+	var last_time = 0;
+	var delta_time = 0;
+
+	//Nos variables
+	var icosa = null;
+	var cube = null;
+	var terrain = null;
+	var bonhomme = null;
+	var light = [];
+	var carotte = null;
+	var oeil1 = null;
+	var oeil2 = null;
+	var main1 = null;
+	var main2 = null;
+	var bouche = null;
+
+
+	//ICI ON LANCE LE CODE
+	init();
+	animation();
+
+	//FONCTION QU'ON LANCE EN PREMIER POUR INITIALISER NOS VARIABLES GLOBALES
+	function init() {
+
+		//ON CREE LA SCENE
+		scene = new THREE.Scene();
+
+		//ON CREE UNE CAMERA PERSPECTIVE (JE VOUS LAISSE VOUS RENSEIGNER)
+		camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.01, 100000);
+
+		//On crée notre renderer WebGL
+		renderer = new THREE.WebGLRenderer({
+			canvas: document.getElementById("game_canvas"),
+			sortObjects: true,
+			antialias: true,
+			localClippingEnabled: false,
+			powerPreference: "high-performance",
+			logarithmicDepthBuffer: true,
+			precision: "highp"
+		});
+		renderer.setPixelRatio(1.0);
+		renderer.setSize(window.innerWidth * 1.0, window.innerHeight * 1.0);
+		renderer.setClearColor(new THREE.Color(0xff0088ff), 0.0);
+
+		//ON AJOUTE LA CAMERA A LA SCENE
+		scene.add(camera);
+		//ON RECULE UN PEU LA CAMERA (INITIALEMENT, ELLE EST EN (0,0,0) (COMME TOUS LES OBJECTS D'AILLERUS) )
+		camera.position.set(0, 0, -1000);
+
+		//CAMERA.LOOKAT(VECTEUR) FAIT QUE LA CAMERA VISE UN POINT DANS L'ESPACE (ICI, (0,0,0) )
+		camera.lookAt(new THREE.Vector3(0, 0, 0));
+
+		//POUR BLOQUER LA SOURIS QUAND ON CLIQUE SUR L ECRAN
+		//pointerblock: blocker la souris
+		pointerlockConfiguration();
+
+		controls_vectors = [];
+		controls_vectors.push(new THREE.Vector3(0, 0, -1));
+
+		character = camera;
+		// ON AJOUTE DES CONTOLS SUR LE CHARACTER QUI ICI EST LA CAMERA
+		controls = new SpaceControls(character, controls_vectors);
+
+		var geometry_icosa = new THREE.IcosahedronGeometry(300, 2);
+		var material_icosa = new THREE.MeshBasicMaterial({
+			wireframe: true,
+			color: 'red'
+		});
+		icosa = new THREE.Mesh(geometry_icosa, material_icosa);
+		scene.add(icosa);
+
+		var geometry_cube = new THREE.BoxGeometry(300, 300, 300, 8, 8, 8);
+		var material_cube = new THREE.MeshBasicMaterial({
+			wireframe: true,
+			color: 'green'
+		});
+		cube = new THREE.Mesh(geometry_cube, material_cube);
+		cube.position.set(800, 0, 0);
+		scene.add(cube);
+
+		var geometry_terrain = new THREE.PlaneGeometry(5000, 5000, 100, 100);
+		var material_terrain = new THREE.MeshBasicMaterial({
+			wireframe: true,
+			color: 'white'
+		});
+		terrain = new THREE.Mesh(geometry_terrain, material_terrain);
+		terrain.rotation.x += Math.PI / 2;
+		scene.add(terrain);
+
+		bonhomme = new THREE.Object3D();
+		var geometry_corps = new THREE.IcosahedronGeometry(500, 2);
+		var geometry_tete = new THREE.IcosahedronGeometry(250, 2);
+
+		var material_corps_tete = new THREE.MeshBasicMaterial({
+			wireframe: false,
+			color: 'lightgrey'
+		});
+
+		var corps = new THREE.Mesh(geometry_corps, material_corps_tete);
+		var tete = new THREE.Mesh(geometry_tete, material_corps_tete);
+
+		tete.position.y += 500;
+
+		bonhomme.add(corps);
+		bonhomme.add(tete);
+		cube.position.set(-800, 0, 0);
+
+		scene.add(bonhomme);
+
+		var geometry_carotte = new THREE.ConeGeometry(20, 100, 32);
+		var material_carotte = new THREE.MeshBasicMaterial({
+			wireframe: true,
+			color: 'orange'
+		});
+		carotte = new THREE.Mesh(geometry_carotte, material_carotte);
+		carotte.rotation.x += Math.PI * 3 / 2;
+		carotte.position.y += 650;
+		carotte.position.z -= 250;
+		scene.add(carotte);
+
+		var geometry_oeil1 = new THREE.IcosahedronGeometry(10, 2);
+		var material_oeil1 = new THREE.MeshBasicMaterial({
+			wireframe: true,
+			color: 'black'
+		});
+		oeil1 = new THREE.Mesh(geometry_oeil1, material_oeil1);
+		oeil1.position.x += 60;
+		oeil1.position.y += 700;
+		oeil1.position.z -= 150;
+		scene.add(oeil1);
+
+		var geometry_oeil2 = new THREE.IcosahedronGeometry(10, 2);
+		var material_oeil2 = new THREE.MeshBasicMaterial({
+			wireframe: true,
+			color: 'black'
+		});
+		oeil2 = new THREE.Mesh(geometry_oeil2, material_oeil2);
+		oeil2.position.x -= 60;
+		oeil2.position.y += 700;
+		oeil2.position.z -= 150;
+		scene.add(oeil2);
+
+		var geometry_main1 = new THREE.CylinderGeometry(5, 5, 400, 62);
+		var material_main1 = new THREE.MeshBasicMaterial({
+			wireframe: false,
+			color: 'brown'
+		});
+		main1 = new THREE.Mesh(geometry_main1, material_main1);
+		main1.position.x += 300;
+		main1.position.y += 400;
+		main1.position.z -= 150;
+		main1.rotation.z += 150;
+		scene.add(main1);
+
+		var geometry_main2 = new THREE.CylinderGeometry(5, 5, 400, 62);
+		var material_main2 = new THREE.MeshBasicMaterial({
+			wireframe: false,
+			color: 'brown'
+		});
+		main2 = new THREE.Mesh(geometry_main2, material_main2);
+		main2.position.x -= 300;
+		main2.position.y += 400;
+		main2.position.z -= 150;
+        main2.rotation.z -= 150;
+		scene.add(main2);
+
+		var geometry_bouche = new THREE.CircleGeometry(30,60,0,3);
+		var material_bouche = new THREE.MeshBasicMaterial({
+			wireframe: true,
+			color: 'red'
+		});
+		bouche = new THREE.Mesh(geometry_bouche, material_bouche);
+		bouche.position.y += 580;
+	    bouche.position.z -= 250;
+		bouche.rotation.z += 600;
+		scene.add(bouche);
+
+	}
+
+	//FONCTION QU'ON VA APPELER EN BOUCLE POUR FAIRE FAIRE BOUGER NOS OBJETS, UPDATE LES CONTROLS ET AFFICHER LA SCENE
+	function animation() {
+
+		//LA FONCTION Date.now() NOUS DONNE LE TEMPS EN MILLISECONDES DEPUIS LE 01/01/1970
+		delta_time = Date.now() - last_time;
+		last_time = Date.now();
+		fps = parseInt(1000 / delta_time);
+
+		//JE METS A JOUR LLES CONTROLS DE LA CAMERA
+		update_character_controls(delta_time);
+
+		if (icosa != null) {
+			icosa.rotation.x += delta_time / 3000;
+			icosa.rotation.y += delta_time / 2000;
+			icosa.rotation.z += delta_time / 1000;
+		}
+
+		if (cube != null) {
+			cube.rotation.y += delta_time / 1000;
+		}
+
+		camera.position.y = (1 + Math.sin(last_time / 3000)) * 1000;
+
+		camera.lookAt(new THREE.Vector3(0, 0, 0));
+        main2.rotation.x = ((1+(Math.sin(Date.now()/1000)))*0.2);
+
+
+		//JE METS LES FPS DANS LA DIV "fps_counter"
+		document.getElementById("fps_counter").innerHTML = fps;
+
+
+		//Le code magic
+
+		//ON APPELLE LA FONCTION D'AFFICHAGE
+		render();
+
+		//ON DEMANDE AU NAVIGATEUR DE RAFRAICHIR LA FENETRE PUIS DE RELANCER "animation()"
+		requestAnimationFrame(animation);
+	}
+
+	//FONCTION QUI PERMET DE DESSINER LA SCENE DANS LE CANVAS
+	function render() {
+		renderer.render(scene, camera);
+	}
+
+	//FONCTION APPELEE QUAND ON FAIT UN CLIC GAuCHE
+	function clic_gauche() {}
+
+</script>
+
+</html>
